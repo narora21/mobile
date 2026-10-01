@@ -43,6 +43,10 @@ class HomePreferences() extends Notifier<HomePrefs> with SessionPreferencesStora
     return save(newState);
   }
 
+  Future<void> setWidgetOrder(IList<HomeEditableWidget> order) {
+    return save(state.copyWith(widgetOrder: order));
+  }
+
   Future<void> setTimeControlConfig({
     required IList<TimeIncrement> disabledTimeControls,
     required bool customButtonEnabled,
@@ -62,16 +66,23 @@ class HomePreferences() extends Notifier<HomePrefs> with SessionPreferencesStora
 }
 
 @Freezed(fromJson: true, toJson: true)
-sealed class HomePrefs with _$HomePrefs implements Serializable {
+sealed class const HomePrefs._() with _$HomePrefs implements Serializable {
   const factory({
     required IList<HomeEditableWidget> disabledWidgets,
     @Default(IListConst<TimeIncrement>([]))
     @_TimeIncrementIListConverter()
     IList<TimeIncrement> disabledTimeControls,
     @Default(true) bool customButtonEnabled,
+
+    /// The order chosen by the user, empty until they reorder the widgets.
+    @Default(IListConst<HomeEditableWidget>([])) IList<HomeEditableWidget> widgetOrder,
   }) = _HomePrefs;
 
   static const defaults = HomePrefs(disabledWidgets: _defaultList);
+
+  /// The widgets in the order they are shown.
+  IList<HomeEditableWidget> get orderedWidgets =>
+      widgetOrder.isEmpty ? kDefaultHomeWidgetOrder : completeHomeWidgetOrder(widgetOrder);
 
   factory fromJson(Map<String, dynamic> json) {
     try {

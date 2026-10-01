@@ -198,7 +198,9 @@ class _HomeScreenState() extends ConsumerState<HomeTabScreen> {
                 authUser == null &&
                 recentGames.maybeWhen(data: (data) => data.isEmpty, orElse: () => false);
 
+            final homePrefs = ref.watch(homePreferencesProvider);
             List<Widget> widgets;
+            IList<_HomeWidgetEntry>? reorderableEntries;
 
             if (shouldShowWelcomeScreen) {
               final welcomeWidgets = [
@@ -357,27 +359,20 @@ class _HomeScreenState() extends ConsumerState<HomeTabScreen> {
                         data: (data) => data.isNotEmpty,
                         orElse: () => false,
                       ));
-              widgets = [
-                const _EditableWidget(
-                  widget: HomeEditableWidget.hello,
-                  shouldShow: true,
-                  child: _GreetingWidget(),
-                ),
-                if (!widget.editModeEnabled) ...[const _HomeCustomizationTip()],
-                if (showOutage) const ServerOutageDisplay(),
-                _EditableWidget(
+              final entries = <_HomeWidgetEntry>[
+                (
                   widget: HomeEditableWidget.perfCards,
                   shouldShow: authUser != null && hasServerContent,
                   child: AccountPerfCards(
                     padding: Styles.horizontalBodyPadding.add(Styles.sectionBottomPadding),
                   ),
                 ),
-                _EditableWidget(
+                (
                   widget: HomeEditableWidget.friends,
                   shouldShow: authUser != null && hasServerContent && hasFollowing,
                   child: FollowingCarousel(followingAsync),
                 ),
-                _EditableWidget(
+                (
                   widget: HomeEditableWidget.quickPairing,
                   shouldShow: hasServerContent,
                   child: const Padding(
@@ -385,30 +380,30 @@ class _HomeScreenState() extends ConsumerState<HomeTabScreen> {
                     child: QuickGameMatrix(),
                   ),
                 ),
-                _EditableWidget(
+                (
                   widget: HomeEditableWidget.ongoingGames,
                   shouldShow: hasOngoingGames,
                   child: hasServerContent
                       ? _OngoingGamesCarousel(ongoingGames, maxGamesToShow: 20)
                       : _OfflineCorrespondenceCarousel(offlineCorresGames, maxGamesToShow: 20),
                 ),
-                _EditableWidget(
+                (
                   widget: HomeEditableWidget.puzzles,
                   shouldShow: true,
                   child: _PuzzlesWidget(showDailyPuzzle: hasServerContent),
                 ),
-                _EditableWidget(
+                (
                   widget: HomeEditableWidget.featuredTournaments,
                   shouldShow: hasServerContent && hasFeaturedTournaments,
                   child: FeaturedTournamentsWidget(featured: featuredTournaments),
                 ),
                 if (_worker != null && !isKidMode)
-                  _EditableWidget(
+                  (
                     widget: HomeEditableWidget.blogCarousel,
                     shouldShow: hasServerContent,
                     child: _BlogCarouselWidget(blogPosts, _worker!),
                   ),
-                _EditableWidget(
+                (
                   widget: HomeEditableWidget.recentGames,
                   shouldShow: true,
                   child: RecentGamesWidget(
@@ -418,12 +413,69 @@ class _HomeScreenState() extends ConsumerState<HomeTabScreen> {
                   ),
                 ),
               ];
+              final entriesByWidget = {for (final entry in entries) entry.widget: entry};
+              final orderedEntries = homePrefs.orderedWidgets
+                  .map((widget) => entriesByWidget[widget])
+                  .nonNulls;
+              if (widget.editModeEnabled) {
+                reorderableEntries = orderedEntries.where((entry) => entry.shouldShow).toIList();
+              }
+              widgets = [
+                const _EditableWidget(
+                  widget: HomeEditableWidget.hello,
+                  shouldShow: true,
+                  child: _GreetingWidget(),
+                ),
+                if (!widget.editModeEnabled) ...[const _HomeCustomizationTip()],
+                if (showOutage) const ServerOutageDisplay(),
+                if (!widget.editModeEnabled)
+                  for (final entry in orderedEntries)
+                    _EditableWidget(
+                      widget: entry.widget,
+                      shouldShow: entry.shouldShow,
+                      child: entry.child,
+                    ),
+              ];
             }
 
-            final content = ListView(
-              controller: homeScrollController,
-              children: [if (unreadLichessMessage) const _LichessMessageBanner(), ...widgets],
-            );
+            final banner = [if (unreadLichessMessage) const _LichessMessageBanner()];
+            final reorderable = reorderableEntries;
+            final content = reorderable != null
+                ? Builder(
+                    builder: (bodyContext) => ReorderableListView.builder(
+                      // Unlike ListView, ReorderableListView doesn't pad itself out of the app bar.
+                      padding: MediaQuery.paddingOf(bodyContext).copyWith(left: 0, right: 0),
+                      buildDefaultDragHandles: false,
+                      header: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [...banner, ...widgets],
+                      ),
+                      itemCount: reorderable.length,
+                      itemBuilder: (context, index) {
+                        final entry = reorderable[index];
+                        return _EditableWidget(
+                          key: ValueKey(entry.widget),
+                          widget: entry.widget,
+                          shouldShow: true,
+                          reorderIndex: index,
+                          child: entry.child,
+                        );
+                      },
+                      onReorderItem: (oldIndex, newIndex) {
+                        ref
+                            .read(homePreferencesProvider.notifier)
+                            .setWidgetOrder(
+                              reorderVisibleHomeWidgets(
+                                order: homePrefs.orderedWidgets,
+                                visible: reorderable.map((entry) => entry.widget).toIList(),
+                                oldIndex: oldIndex,
+                                newIndex: newIndex,
+                              ),
+                            );
+                      },
+                    ),
+                  )
+                : ListView(controller: homeScrollController, children: [...banner, ...widgets]);
 
             return FocusDetector(
               onFocusLost: () {
@@ -587,10 +639,16 @@ class const _SignInWidget() extends ConsumerWidget {
 ///   pairing matrix when the user is online.
 ///   This parameter is only active when the user is not in edit mode, as we
 ///   always want to display the widget in edit mode.
+typedef _HomeWidgetEntry = ({HomeEditableWidget widget, bool shouldShow, Widget child});
+
 class const _EditableWidget({
   required final Widget child,
   required final HomeEditableWidget widget,
   required final bool shouldShow,
+
+  /// The index of the widget in the reorderable list of the edit mode, if it can be moved.
+  final int? reorderIndex,
+  super.key,
 }) extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -629,6 +687,17 @@ class const _EditableWidget({
                 IconButton(
                   icon: const Icon(Icons.settings),
                   onPressed: () => showTimeControlPicker(context, ref),
+                ),
+              if (reorderIndex case final index?)
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Semantics(
+                    label: 'Drag to reorder',
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0),
+                      child: Icon(Icons.drag_handle),
+                    ),
+                  ),
                 ),
             ],
           )
