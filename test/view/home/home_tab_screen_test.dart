@@ -15,6 +15,7 @@ import 'package:lichess_mobile/src/view/home/games_carousel.dart';
 import 'package:lichess_mobile/src/view/home/home_tab_screen.dart';
 import 'package:lichess_mobile/src/view/play/quick_game_matrix.dart';
 import 'package:lichess_mobile/src/view/puzzle/daily_puzzle.dart';
+import 'package:lichess_mobile/src/view/puzzle/puzzle_angle_preview.dart';
 import 'package:lichess_mobile/src/view/puzzle/puzzle_screen.dart';
 import 'package:lichess_mobile/src/view/tournament/tournament_list_screen.dart';
 import 'package:lichess_mobile/src/widgets/buttons.dart';
@@ -313,6 +314,9 @@ void main() {
           if (request.url.path == '/api/puzzle/daily') {
             return mockResponse(mockDailyPuzzleResponse, 200);
           }
+          if (request.url.path == '/api/puzzle/batch/mix') {
+            return mockResponse(mockMixBatchResponse, 200);
+          }
           if (request.url.path == '/tournament/featured') {
             return mockResponse('{"featured":[]}', 200);
           }
@@ -340,6 +344,7 @@ void main() {
         expect(find.widgetWithText(ListSectionHeader, 'Puzzles'), findsOneWidget);
         expect(find.byType(DailyPuzzle), findsOneWidget);
         expect(find.text('Puzzle of the day'), findsOneWidget);
+        expect(find.widgetWithText(PuzzleAnglePreview, 'Healthy mix'), findsOneWidget);
       });
 
       testWidgets('is hidden once disabled', (tester) async {
@@ -378,6 +383,22 @@ void main() {
         expect(container.read(currentBottomTabProvider), BottomTab.puzzles);
         expect(find.byType(PuzzleScreen), findsOneWidget);
       });
+
+      testWidgets('tapping healthy mix switches to the puzzles tab and opens a puzzle', (
+        tester,
+      ) async {
+        await pumpHome(tester);
+
+        final healthyMix = find.widgetWithText(PuzzleAnglePreview, 'Healthy mix');
+        await tester.ensureVisible(healthyMix);
+        await tester.tap(healthyMix);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+
+        final container = ProviderScope.containerOf(tester.element(find.byType(Application)));
+        expect(container.read(currentBottomTabProvider), BottomTab.puzzles);
+        expect(find.byType(PuzzleScreen), findsOneWidget);
+      });
     });
   });
 
@@ -393,7 +414,7 @@ void main() {
       expect(find.byType(OfflineBanner), findsOneWidget);
     });
 
-    testWidgets('does not show the daily puzzle', (tester) async {
+    testWidgets('shows the healthy mix but not the daily puzzle', (tester) async {
       final app = await makeOfflineTestProviderScope(
         tester,
         child: const Application(),
@@ -406,6 +427,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(DailyPuzzle), findsNothing);
+      expect(find.widgetWithText(ListSectionHeader, 'Puzzles'), findsOneWidget);
+      expect(find.widgetWithText(PuzzleAnglePreview, 'Healthy mix'), findsOneWidget);
     });
 
     testWidgets('shows Play button', (tester) async {

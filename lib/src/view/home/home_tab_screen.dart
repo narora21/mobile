@@ -19,6 +19,8 @@ import 'package:lichess_mobile/src/model/correspondence/correspondence_game_stor
 import 'package:lichess_mobile/src/model/correspondence/offline_correspondence_game.dart';
 import 'package:lichess_mobile/src/model/game/game_history.dart';
 import 'package:lichess_mobile/src/model/message/message_repository.dart';
+import 'package:lichess_mobile/src/model/puzzle/puzzle_angle.dart';
+import 'package:lichess_mobile/src/model/puzzle/puzzle_theme.dart';
 import 'package:lichess_mobile/src/model/relation/following_user.dart';
 import 'package:lichess_mobile/src/model/tournament/tournament.dart';
 import 'package:lichess_mobile/src/model/tournament/tournament_providers.dart';
@@ -50,6 +52,8 @@ import 'package:lichess_mobile/src/view/play/play_bottom_sheet.dart';
 import 'package:lichess_mobile/src/view/play/play_menu.dart';
 import 'package:lichess_mobile/src/view/play/quick_game_matrix.dart';
 import 'package:lichess_mobile/src/view/puzzle/daily_puzzle.dart';
+import 'package:lichess_mobile/src/view/puzzle/puzzle_angle_preview.dart';
+import 'package:lichess_mobile/src/view/puzzle/puzzle_screen.dart';
 import 'package:lichess_mobile/src/view/tournament/tournament_list_screen.dart';
 import 'package:lichess_mobile/src/view/user/challenge_requests_screen.dart';
 import 'package:lichess_mobile/src/view/user/recent_games.dart';
@@ -320,8 +324,8 @@ class _HomeScreenState() extends ConsumerState<HomeTabScreen> {
                           const SizedBox(height: 8.0),
                           _EditableWidget(
                             widget: HomeEditableWidget.puzzles,
-                            shouldShow: hasServerContent,
-                            child: const _PuzzlesWidget(),
+                            shouldShow: true,
+                            child: _PuzzlesWidget(showDailyPuzzle: hasServerContent),
                           ),
                           FeaturedTournamentsWidget(featured: featuredTournaments),
                           if (_worker != null && !isKidMode)
@@ -390,8 +394,8 @@ class _HomeScreenState() extends ConsumerState<HomeTabScreen> {
                 ),
                 _EditableWidget(
                   widget: HomeEditableWidget.puzzles,
-                  shouldShow: hasServerContent,
-                  child: const _PuzzlesWidget(),
+                  shouldShow: true,
+                  child: _PuzzlesWidget(showDailyPuzzle: hasServerContent),
                 ),
                 _EditableWidget(
                   widget: HomeEditableWidget.featuredTournaments,
@@ -658,7 +662,7 @@ final _isDayTimeProvider = NotifierProvider.autoDispose<_IsDayTimeNotifier, bool
   name: '_isDayTimeProvider',
 );
 
-class const _PuzzlesWidget() extends ConsumerWidget {
+class const _PuzzlesWidget({required final bool showDailyPuzzle}) extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     void switchToPuzzlesTab() => ref.read(currentBottomTabProvider.notifier).state = .puzzles;
@@ -675,7 +679,17 @@ class const _PuzzlesWidget() extends ConsumerWidget {
               onTap: switchToPuzzlesTab,
             ),
           ),
-          DailyPuzzle(onBeforeOpen: switchToPuzzlesTab),
+          if (showDailyPuzzle) DailyPuzzle(onBeforeOpen: switchToPuzzlesTab),
+          PuzzleAnglePreview(
+            angle: const PuzzleTheme(PuzzleThemeKey.mix),
+            onTap: () {
+              switchToPuzzlesTab();
+              Navigator.of(
+                context,
+                rootNavigator: true,
+              ).push(PuzzleScreen.buildRoute(angle: const PuzzleTheme(PuzzleThemeKey.mix)));
+            },
+          ),
         ],
       ),
     );
