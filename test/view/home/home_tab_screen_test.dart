@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
 import 'package:lichess_mobile/src/app.dart';
 import 'package:lichess_mobile/src/model/account/home_preferences.dart';
+import 'package:lichess_mobile/src/model/account/home_widgets.dart';
 import 'package:lichess_mobile/src/model/auth/auth_repository.dart';
 import 'package:lichess_mobile/src/model/game/game_storage.dart';
 import 'package:lichess_mobile/src/network/http.dart';
@@ -399,6 +400,121 @@ void main() {
         expect(container.read(currentBottomTabProvider), BottomTab.puzzles);
         expect(find.byType(PuzzleScreen), findsOneWidget);
       });
+    });
+  });
+
+  group('reordering home widgets', () {
+    Future<ProviderContainer> pumpHome(
+      WidgetTester tester, {
+      Size surfaceSize = kTestSurfaceSize,
+    }) async {
+      final mockClient = MockClient((request) {
+        if (request.url.path == '/api/puzzle/daily') {
+          return mockResponse(mockDailyPuzzleResponse, 200);
+        }
+        if (request.url.path == '/api/puzzle/batch/mix') {
+          return mockResponse(mockMixBatchResponse, 200);
+        }
+        if (request.url.path == '/api/games/user/testuser') {
+          return mockResponse(mockUserRecentGameResponse('testUser'), 200);
+        }
+        if (request.url.path == '/tournament/featured') {
+          return mockResponse('{"featured":[]}', 200);
+        }
+        return mockResponse('', 200);
+      });
+      final app = await makeTestProviderScope(
+        tester,
+        child: const Application(),
+        authUser: fakeAuthUser,
+        surfaceSize: surfaceSize,
+        overrides: {
+          httpClientFactoryProvider: httpClientFactoryProvider.overrideWith(
+            (ref) => FakeHttpClientFactory(() => mockClient),
+          ),
+        },
+      );
+      await tester.pumpWidget(app);
+      // wait for connectivity
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await tester.pumpAndSettle();
+      return ProviderScope.containerOf(tester.element(find.byType(Application)));
+    }
+
+    double topOf(WidgetTester tester, Finder finder) => tester.getTopLeft(finder).dy;
+
+    testWidgets('home shows widgets in the saved order', (tester) async {
+      final container = await pumpHome(tester);
+      final puzzlesHeader = find.widgetWithText(ListSectionHeader, 'Puzzles');
+
+      expect(
+        topOf(tester, puzzlesHeader),
+        lessThan(topOf(tester, find.text('Recent games', skipOffstage: false))),
+      );
+
+      final order = container.read(homePreferencesProvider).orderedWidgets;
+      await container
+          .read(homePreferencesProvider.notifier)
+          .setWidgetOrder(
+            order.remove(HomeEditableWidget.recentGames).insert(1, HomeEditableWidget.recentGames),
+          );
+      await tester.pumpAndSettle();
+
+      expect(
+        topOf(tester, find.text('Recent games')),
+        lessThan(
+          topOf(tester, find.widgetWithText(ListSectionHeader, 'Puzzles', skipOffstage: false)),
+        ),
+      );
+    });
+
+    testWidgets('edit mode shows drag handles on movable widgets only', (tester) async {
+      await pumpHome(tester);
+
+      await tester.tap(find.text('Customize'));
+      await tester.pumpAndSettle();
+
+      final list = tester.widget<ReorderableListView>(find.byType(ReorderableListView));
+      expect(find.byIcon(Icons.drag_handle), findsWidgets);
+      // The greeting is the list header, which can't be moved.
+      expect(
+        find.descendant(of: find.byWidget(list.header!), matching: find.byIcon(Icons.drag_handle)),
+        findsNothing,
+      );
+    });
+
+    testWidgets('dragging a handle reorders the widgets and saves the order', (tester) async {
+      final container = await pumpHome(tester);
+
+      await tester.tap(find.text('Customize'));
+      await tester.pumpAndSettle();
+
+      final puzzlesRow = find.ancestor(
+        of: find.widgetWithText(ListSectionHeader, 'Puzzles'),
+        matching: find.byType(Row),
+      );
+      final puzzlesHandle = find.descendant(
+        of: puzzlesRow.last,
+        matching: find.byIcon(Icons.drag_handle),
+      );
+      await tester.ensureVisible(puzzlesHandle);
+      await tester.pumpAndSettle();
+      await tester.timedDrag(puzzlesHandle, const Offset(0, -1500), const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+
+      final order = container.read(homePreferencesProvider).orderedWidgets;
+      expect(order.indexOf(HomeEditableWidget.puzzles), 1);
+      expect(order.first, HomeEditableWidget.hello);
+    });
+
+    testWidgets('tablet edit mode has no drag handles', (tester) async {
+      await pumpHome(tester, surfaceSize: const Size(1024, 1366));
+
+      await tester.tap(find.text('Customize'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ReorderableListView), findsNothing);
+      expect(find.byIcon(Icons.drag_handle), findsNothing);
     });
   });
 

@@ -83,4 +83,109 @@ void main() {
       expect(updated.disabledTimeControls, isEmpty);
     });
   });
+
+  group('HomePrefs widget order', () {
+    test('defaults to the default order', () {
+      expect(HomePrefs.defaults.orderedWidgets, kDefaultHomeWidgetOrder);
+    });
+
+    test('fromJson without a widget order uses the default order', () {
+      final oldJson = jsonDecode('{"disabledWidgets":["quickPairing"]}') as Map<String, dynamic>;
+
+      expect(HomePrefs.fromJson(oldJson).orderedWidgets, kDefaultHomeWidgetOrder);
+    });
+
+    test('serialization round-trip preserves the widget order', () {
+      final order = kDefaultHomeWidgetOrder.reversed.toIList();
+      final prefs = HomePrefs.defaults.copyWith(widgetOrder: order);
+
+      expect(HomePrefs.fromJson(prefs.toJson()).orderedWidgets, order);
+    });
+
+    test('widgets missing from a saved order are inserted after their default predecessor', () {
+      const saved = IListConst([
+        HomeEditableWidget.hello,
+        HomeEditableWidget.recentGames,
+        HomeEditableWidget.perfCards,
+        HomeEditableWidget.friends,
+        HomeEditableWidget.quickPairing,
+        HomeEditableWidget.ongoingGames,
+        HomeEditableWidget.featuredTournaments,
+        HomeEditableWidget.blogCarousel,
+      ]);
+
+      expect(
+        completeHomeWidgetOrder(saved),
+        const IListConst([
+          HomeEditableWidget.hello,
+          HomeEditableWidget.recentGames,
+          HomeEditableWidget.perfCards,
+          HomeEditableWidget.friends,
+          HomeEditableWidget.quickPairing,
+          HomeEditableWidget.ongoingGames,
+          HomeEditableWidget.puzzles,
+          HomeEditableWidget.featuredTournaments,
+          HomeEditableWidget.blogCarousel,
+        ]),
+      );
+    });
+  });
+
+  group('reorderVisibleHomeWidgets', () {
+    const order = IListConst([
+      HomeEditableWidget.quickPairing,
+      HomeEditableWidget.ongoingGames,
+      HomeEditableWidget.puzzles,
+      HomeEditableWidget.recentGames,
+    ]);
+    // ongoingGames is hidden, e.g. when there are no ongoing games.
+    const visible = IListConst([
+      HomeEditableWidget.quickPairing,
+      HomeEditableWidget.puzzles,
+      HomeEditableWidget.recentGames,
+    ]);
+
+    test('moves a widget down past a hidden one', () {
+      expect(
+        reorderVisibleHomeWidgets(order: order, visible: visible, oldIndex: 0, newIndex: 1),
+        const IListConst([
+          HomeEditableWidget.ongoingGames,
+          HomeEditableWidget.puzzles,
+          HomeEditableWidget.quickPairing,
+          HomeEditableWidget.recentGames,
+        ]),
+      );
+    });
+
+    test('moves a widget to the start', () {
+      expect(
+        reorderVisibleHomeWidgets(order: order, visible: visible, oldIndex: 2, newIndex: 0),
+        const IListConst([
+          HomeEditableWidget.recentGames,
+          HomeEditableWidget.quickPairing,
+          HomeEditableWidget.ongoingGames,
+          HomeEditableWidget.puzzles,
+        ]),
+      );
+    });
+
+    test('moves a widget to the end', () {
+      expect(
+        reorderVisibleHomeWidgets(order: order, visible: visible, oldIndex: 0, newIndex: 2),
+        const IListConst([
+          HomeEditableWidget.ongoingGames,
+          HomeEditableWidget.puzzles,
+          HomeEditableWidget.recentGames,
+          HomeEditableWidget.quickPairing,
+        ]),
+      );
+    });
+
+    test('keeps the order when a widget is dropped in place', () {
+      expect(
+        reorderVisibleHomeWidgets(order: order, visible: visible, oldIndex: 1, newIndex: 1),
+        order,
+      );
+    });
+  });
 }
